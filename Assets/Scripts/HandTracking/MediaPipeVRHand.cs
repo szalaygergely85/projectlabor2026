@@ -201,6 +201,13 @@ public class MediaPipeVRHand : MonoBehaviour
             }
         }
 
+        if (Time.frameCount % 60 == 0)
+        {
+            Debug.Log(
+                $"[TRACKING] Left: {leftTracked} | Right: {rightTracked}"
+            );
+        }
+
         // Reset 
         if (!leftTracked)
         {

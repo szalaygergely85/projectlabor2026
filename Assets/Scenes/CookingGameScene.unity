@@ -1068,41 +1068,37 @@ MonoBehaviour:
       bone2: {fileID: 493054790}
       bone3: {fileID: 1844363959}
       bone4: {fileID: 1168644923}
-      bendAxis: {x: 1, y: 0, z: 0}
-      bendDirection: 1
-      maxBend: 90
+      bone1IsMetacarpal: 0
+      tipMarker: {fileID: 0}
     index:
       bone1: {fileID: 1574271115}
       bone2: {fileID: 1557796105}
       bone3: {fileID: 569105284}
       bone4: {fileID: 1755729938}
-      bendAxis: {x: 1, y: 0, z: 0}
-      bendDirection: 1
-      maxBend: 90
+      bone1IsMetacarpal: 0
+      tipMarker: {fileID: 0}
     middle:
       bone1: {fileID: 1007849351}
       bone2: {fileID: 772857266}
       bone3: {fileID: 1489854183}
       bone4: {fileID: 1072401903}
-      bendAxis: {x: 1, y: 0, z: 0}
-      bendDirection: 1
-      maxBend: 90
+      bone1IsMetacarpal: 0
+      tipMarker: {fileID: 0}
     ring:
       bone1: {fileID: 1322010423}
       bone2: {fileID: 1924574582}
       bone3: {fileID: 2030152559}
       bone4: {fileID: 1734200210}
-      bendAxis: {x: 1, y: 0, z: 0}
-      bendDirection: 1
-      maxBend: 90
+      bone1IsMetacarpal: 0
+      tipMarker: {fileID: 0}
     pinky:
       bone1: {fileID: 1479104307}
       bone2: {fileID: 1961905006}
       bone3: {fileID: 871011681}
       bone4: {fileID: 1195641918}
-      bendAxis: {x: 1, y: 0, z: 0}
-      bendDirection: 1
-      maxBend: 90
+      bone1IsMetacarpal: 0
+      tipMarker: {fileID: 0}
+    modelRotationOffset: {x: 0, y: 0, z: 0}
   rightHand:
     handRoot: {fileID: 1496576870}
     thumb:
@@ -1110,44 +1106,42 @@ MonoBehaviour:
       bone2: {fileID: 1958888184}
       bone3: {fileID: 2001871569}
       bone4: {fileID: 1163781670}
-      bendAxis: {x: 1, y: 0, z: 0}
-      bendDirection: 1
-      maxBend: 90
+      bone1IsMetacarpal: 0
+      tipMarker: {fileID: 0}
     index:
       bone1: {fileID: 720623555}
       bone2: {fileID: 535494132}
       bone3: {fileID: 2007289949}
       bone4: {fileID: 1074549567}
-      bendAxis: {x: 1, y: 0, z: 0}
-      bendDirection: 1
-      maxBend: 90
+      bone1IsMetacarpal: 0
+      tipMarker: {fileID: 0}
     middle:
       bone1: {fileID: 63360330}
       bone2: {fileID: 260896095}
       bone3: {fileID: 1392290936}
       bone4: {fileID: 1832241033}
-      bendAxis: {x: 1, y: 0, z: 0}
-      bendDirection: 1
-      maxBend: 90
+      bone1IsMetacarpal: 0
+      tipMarker: {fileID: 0}
     ring:
       bone1: {fileID: 1822469584}
       bone2: {fileID: 1953472887}
       bone3: {fileID: 316443681}
       bone4: {fileID: 1962829006}
-      bendAxis: {x: 1, y: 0, z: 0}
-      bendDirection: 1
-      maxBend: 90
+      bone1IsMetacarpal: 0
+      tipMarker: {fileID: 0}
     pinky:
       bone1: {fileID: 2105423642}
       bone2: {fileID: 349777561}
       bone3: {fileID: 498358346}
       bone4: {fileID: 1811903643}
-      bendAxis: {x: 1, y: 0, z: 0}
-      bendDirection: 1
-      maxBend: 90
+      bone1IsMetacarpal: 0
+      tipMarker: {fileID: 0}
+    modelRotationOffset: {x: 0, y: 0, z: 180}
   smoothing: 30
   mirrorX: 0
   mirrorY: 1
+  enableRotation: 1
+  rotationSmoothing: 20
   pinchThreshold: 0.4
 --- !u!4 &1953472887 stripped
 Transform:

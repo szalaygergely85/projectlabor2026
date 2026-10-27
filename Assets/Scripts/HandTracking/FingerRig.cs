@@ -19,6 +19,13 @@ public class FingerRig
     [Tooltip("Optional child marker at the fingertip")]
     public Transform tipMarker;
 
+
+    [Header("Adaptive Smoothing")]
+    public float jitterThreshold = 0.75f;
+    public float slowSpeed = 8f;
+    public float fastSpeed = 45f;
+
+
     private Transform[] bones;
     private Vector3 lastBoneLocalAxis;
     private bool initialized;
@@ -83,7 +90,7 @@ public class FingerRig
             cameraTransform == null)
             return;
 
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < 3; i++)
         {
             Transform bone = bones[i];
 
@@ -154,12 +161,38 @@ public class FingerRig
                 );
 
             Quaternion targetRotation =
-                correction * bone.rotation;
+    correction * bone.rotation;
+
+            // Difference between current and desired rotation
+            float angleDifference = Quaternion.Angle(
+                bone.rotation,
+                targetRotation
+            );
+
+            // Ignore extremely small movements
+            if (angleDifference < jitterThreshold)
+                continue;
+
+            // Small movements: smoother
+            // Large movements: faster
+            float movementAmount = Mathf.InverseLerp(
+                1f, 25f, angleDifference
+            );
+
+            float speed = Mathf.Lerp(
+                slowSpeed,
+                fastSpeed,
+                movementAmount
+            );
+
+            float t = 1f - Mathf.Exp(
+                -speed * Time.deltaTime
+            );
 
             bone.rotation = Quaternion.Slerp(
                 bone.rotation,
                 targetRotation,
-                Mathf.Clamp01(smoothing)
+                t
             );
         }
     }

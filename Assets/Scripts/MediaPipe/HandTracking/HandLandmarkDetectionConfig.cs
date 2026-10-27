@@ -21,10 +21,10 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
     public Tasks.Vision.Core.RunningMode RunningMode { get; set; } = Tasks.Vision.Core.RunningMode.VIDEO;
 
-    public int NumHands { get; set; } = 1;
-    public float MinHandDetectionConfidence { get; set; } = 0.5f;
-    public float MinHandPresenceConfidence { get; set; } = 0.5f;
-    public float MinTrackingConfidence { get; set; } = 0.5f;
+    public int NumHands { get; set; } = 2;
+    public float MinHandDetectionConfidence { get; set; } = 0.6f;
+    public float MinHandPresenceConfidence { get; set; } = 0.6f;
+    public float MinTrackingConfidence { get; set; } = 0.6f;
     public string ModelPath => "hand_landmarker.bytes";
 
     public HandLandmarkerOptions GetHandLandmarkerOptions(HandLandmarkerOptions.ResultCallback resultCallback = null)

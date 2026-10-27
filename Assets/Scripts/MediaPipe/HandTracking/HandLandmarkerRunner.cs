@@ -153,8 +153,9 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
             else
             {
               _handLandmarkerResultAnnotationController.DrawNow(default);
-               if (Time.frameCount % 60 == 0)
-            Debug.Log("[RUNNER] Detection failed");
+              vrHand?.Apply(default);
+              if (Time.frameCount % 60 == 0)
+                Debug.Log("[RUNNER] Detection failed");
             }
             break;
           case Tasks.Vision.Core.RunningMode.LIVE_STREAM:
