@@ -1,4 +1,3 @@
-
 using UnityEngine;
 using Mediapipe.Tasks.Vision.HandLandmarker;
 
@@ -6,57 +5,66 @@ public class MediaPipeVRHand : MonoBehaviour
 {
     [Header("References")]
     public Camera sceneCamera;
-    public Transform handRoot;
 
-    [Header("Fingers")]
-    public FingerRig thumb = new FingerRig();
-    public FingerRig index = new FingerRig();
-    public FingerRig middle = new FingerRig();
-    public FingerRig ring = new FingerRig();
-    public FingerRig pinky = new FingerRig();
+    [System.Serializable]
+    public class HandRig
+    {
+        public Transform handRoot;
+
+        public FingerRig thumb = new FingerRig();
+        public FingerRig index = new FingerRig();
+        public FingerRig middle = new FingerRig();
+        public FingerRig ring = new FingerRig();
+        public FingerRig pinky = new FingerRig();
+
+        [System.NonSerialized]
+        public float trackingDepth;
+
+        [System.NonSerialized]
+        public bool isPinching;
+    }
+
+    public HandRig leftHand = new HandRig();
+    public HandRig rightHand = new HandRig();
 
     [Header("Movement")]
-    public float movementScale = 5f;
     public float smoothing = 30f;
     public bool mirrorX = false;
     public bool mirrorY = true;
 
     [Header("Pinch Detection")]
     public float pinchThreshold = 0.4f;
-    public bool IsPinching { get; private set; }
 
-    private Vector3 initialLocalPosition;
-    private Vector2 initialWrist;
-
-
-    private float trackingDepth;
+    public bool IsPinching =>
+        leftHand.isPinching || rightHand.isPinching;
 
     void Start()
     {
-
-        if (sceneCamera == null || handRoot == null)
+        if (sceneCamera == null ||
+            leftHand.handRoot == null ||
+            rightHand.handRoot == null)
         {
             Debug.LogError(
-                "[VR HAND] Missing camera or hand root!"
-            );
+                "[VR HAND] Missing camera or hand roots!", this);
+
             enabled = false;
             return;
         }
 
-        trackingDepth = sceneCamera.WorldToViewportPoint(
-    handRoot.position
-).z;
+        InitializeHand(leftHand);
+        InitializeHand(rightHand);
+    }
 
+    void InitializeHand(HandRig hand)
+    {
+        hand.trackingDepth =
+            sceneCamera.WorldToViewportPoint(hand.handRoot.position).z;
 
-        initialLocalPosition = handRoot.localPosition;
-
-        thumb.Initialize();
-        index.Initialize();
-        middle.Initialize();
-        ring.Initialize();
-        pinky.Initialize();
-
-        Debug.Log("[VR HAND] Initialized");
+        hand.thumb.Initialize();
+        hand.index.Initialize();
+        hand.middle.Initialize();
+        hand.ring.Initialize();
+        hand.pinky.Initialize();
     }
 
     public void Apply(HandLandmarkerResult result)
@@ -64,77 +72,124 @@ public class MediaPipeVRHand : MonoBehaviour
         if (!isActiveAndEnabled)
             return;
 
-        if (result.handLandmarks == null ||
-            result.handLandmarks.Count == 0 ||
-            result.handWorldLandmarks == null ||
-            result.handWorldLandmarks.Count == 0)
+        bool leftTracked = false;
+        bool rightTracked = false;
+
+        float t = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
+
+        if (result.handLandmarks != null &&
+            result.handWorldLandmarks != null &&
+            result.handedness != null)
         {
-
-            IsPinching = false;
-            return;
-        }
-
-        var points = result.handLandmarks[0].landmarks;
-        var world = result.handWorldLandmarks[0].landmarks;
-
-        if (points.Count < 21 || world.Count < 21)
-            return;
-
-        float t = 1f - Mathf.Exp(
-            -smoothing * Time.deltaTime
-        );
-
-
-        var wrist = points[0];
-
-        float x = mirrorX ? 1f - wrist.x : wrist.x;
-        float y = mirrorY ? 1f - wrist.y : wrist.y;
-
-        Vector3 target = sceneCamera.ViewportToWorldPoint(
-            new Vector3(x, y, trackingDepth)
-        );
-
-        handRoot.position = target;
-
-
-        thumb.Apply(world, 1, t);
-        index.Apply(world, 5, t);
-        middle.Apply(world, 9, t);
-        ring.Apply(world, 13, t);
-        pinky.Apply(world, 17, t);
-
-        var thumbTip = points[4];
-        var indexTip = points[8];
-
-        var indexBase = points[5];
-        var pinkyBase = points[17];
-
-        float distance = Vector2.Distance(
-            new Vector2(thumbTip.x, thumbTip.y),
-            new Vector2(indexTip.x, indexTip.y)
-        );
-
-        float palmWidth = Vector2.Distance(
-            new Vector2(indexBase.x, indexBase.y),
-            new Vector2(pinkyBase.x, pinkyBase.y)
-        );
-
-        bool previous = IsPinching;
-
-        float threshold = IsPinching
-            ? pinchThreshold * 1.35f
-            : pinchThreshold;
-
-        IsPinching = palmWidth > 0.001f &&
-            distance / palmWidth < threshold;
-
-        if (IsPinching != previous)
-        {
-            Debug.Log(
-                IsPinching
-                    ? "[VR HAND] PINCH"
-                    : "[VR HAND] RELEASE"
+            int handCount = Mathf.Min(
+                result.handLandmarks.Count,
+                Mathf.Min(
+                    result.handWorldLandmarks.Count,
+                    result.handedness.Count
+                )
             );
+
+            for (int handIndex = 0; handIndex < handCount; handIndex++)
+            {
+                var categories =
+                    result.handedness[handIndex].categories;
+
+                if (categories == null || categories.Count == 0)
+                    continue;
+
+                string label = categories[0].categoryName;
+
+                HandRig hand;
+
+                if (label == "Left")
+                    hand = leftHand;
+                else if (label == "Right")
+                    hand = rightHand;
+                else
+                    continue;
+
+                var points =
+                    result.handLandmarks[handIndex].landmarks;
+
+                var world =
+                    result.handWorldLandmarks[handIndex].landmarks;
+
+                if (points == null || world == null ||
+                    points.Count < 21 || world.Count < 21)
+                {
+                    continue;
+                }
+
+                if (label == "Left")
+                    leftTracked = true;
+                else
+                    rightTracked = true;
+
+                var wrist = points[0];
+
+                float x = mirrorX ? 1f - wrist.x : wrist.x;
+                float y = mirrorY ? 1f - wrist.y : wrist.y;
+
+                Vector3 target = sceneCamera.ViewportToWorldPoint(
+                    new Vector3(x, y, hand.trackingDepth)
+                );
+
+                hand.handRoot.position = Vector3.Lerp(
+                    hand.handRoot.position,
+                    target,
+                    t
+                );
+
+                hand.thumb.Apply(world, 1, t);
+                hand.index.Apply(world, 5, t);
+                hand.middle.Apply(world, 9, t);
+                hand.ring.Apply(world, 13, t);
+                hand.pinky.Apply(world, 17, t);
+
+                var thumbTip = points[4];
+                var indexTip = points[8];
+                var indexBase = points[5];
+                var pinkyBase = points[17];
+
+                float distance = Vector2.Distance(
+                    new Vector2(thumbTip.x, thumbTip.y),
+                    new Vector2(indexTip.x, indexTip.y)
+                );
+
+                float palmWidth = Vector2.Distance(
+                    new Vector2(indexBase.x, indexBase.y),
+                    new Vector2(pinkyBase.x, pinkyBase.y)
+                );
+
+                float threshold = hand.isPinching
+                    ? pinchThreshold * 1.35f
+                    : pinchThreshold;
+
+                bool pinching = palmWidth > 0.001f &&
+                    distance / palmWidth < threshold;
+
+                SetPinching(hand, pinching, label);
+            }
         }
+
+        // Reset only hands that were not tracked in this result.
+        if (!leftTracked)
+            SetPinching(leftHand, false, "Left");
+
+        if (!rightTracked)
+            SetPinching(rightHand, false, "Right");
+    }
+
+    void SetPinching(HandRig hand, bool pinching, string label)
+    {
+        if (hand.isPinching == pinching)
+            return;
+
+        hand.isPinching = pinching;
+
+        Debug.Log(
+            $"[VR HAND] {label}: {(pinching ? "PINCH" : "RELEASE")}",
+            this
+        );
     }
 }

@@ -50,7 +50,7 @@ public class FingerRig
             points[start + 1],
             smoothing
         );
-        // MCP joint
+     
         Bend(
             bone2, rest2,
             points[0],
@@ -59,7 +59,7 @@ public class FingerRig
             smoothing
         );
 
-        // PIP joint
+ 
         Bend(
             bone3, rest3,
             points[start],
@@ -68,7 +68,7 @@ public class FingerRig
             smoothing
         );
 
-        // DIP joint
+  
         Bend(
             bone4, rest4,
             points[start + 1],
