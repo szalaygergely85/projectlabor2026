@@ -6,211 +6,176 @@ using Mediapipe.Tasks.Components.Containers;
 [System.Serializable]
 public class FingerRig
 {
-    [Header("Bones")]
+    [Header("Finger Bones")]
     public Transform bone1;
     public Transform bone2;
     public Transform bone3;
     public Transform bone4;
 
-    [Header("Bending")]
-    public Vector3 bendAxis = Vector3.right;
-    public float bendDirection = 1f;
-    public float maxBend = 90f;
+    [Header("Rig Mapping")]
+    [Tooltip("Enable if bone1 represents wrist-to-knuckle")]
+    public bool bone1IsMetacarpal = false;
 
-    [Header("Finger Spreading")]
-    public bool enableSpread = true;
-    public Vector3 spreadAxis = Vector3.up;
-    public float spreadDirection = 1f;
-    public float spreadMultiplier = 1f;
-    public float maxSpread = 25f;
+    [Tooltip("Optional child marker at the fingertip")]
+    public Transform tipMarker;
 
-    private Quaternion rest1;
-    private Quaternion rest2;
-    private Quaternion rest3;
-    private Quaternion rest4;
-
-    private bool spreadCalibrated;
-    private float neutralSpread;
+    private Transform[] bones;
+    private Vector3 lastBoneLocalAxis;
+    private bool initialized;
 
     public void Initialize()
     {
-        if (bone1 != null)
-            rest1 = bone1.localRotation;
+        bones = new Transform[]
+        {
+            bone1, bone2, bone3, bone4
+        };
 
-        if (bone2 != null)
-            rest2 = bone2.localRotation;
+        initialized = true;
 
-        if (bone3 != null)
-            rest3 = bone3.localRotation;
+        for (int i = 0; i < bones.Length; i++)
+        {
+            if (bones[i] == null)
+            {
+                Debug.LogWarning(
+                    "[FingerRig] Missing bone " + (i + 1)
+                );
+                initialized = false;
+            }
+        }
 
-        if (bone4 != null)
-            rest4 = bone4.localRotation;
+        if (!initialized)
+            return;
 
-        spreadCalibrated = false;
+        // Find the direction of the last bone.
+        // A fingertip marker is more accurate.
+        Vector3 lastDirection = tipMarker != null
+            ? tipMarker.position - bone4.position
+            : bone4.position - bone3.position;
+
+        if (lastDirection.sqrMagnitude < 0.00000001f)
+        {
+            initialized = false;
+            Debug.LogWarning(
+                "[FingerRig] Cannot determine last bone axis."
+            );
+            return;
+        }
+
+        lastBoneLocalAxis =
+            bone4.InverseTransformDirection(
+                lastDirection.normalized
+            );
+
+        Debug.Log("[FingerRig] Initialized");
     }
 
     public void Apply(
         IList<Landmark> points,
         int start,
-        float smoothing)
+        float smoothing,
+        Transform cameraTransform,
+        bool mirrorX,
+        bool mirrorY)
     {
-        if (points == null || points.Count < 21)
+        if (!initialized ||
+            points == null ||
+            points.Count < 21 ||
+            cameraTransform == null)
             return;
 
-        // 1. Side-to-side movement
-        if (enableSpread)
-            ApplySpread(points, start, smoothing);
-
-        // 2. Three bending joints
-        Bend(
-           bone1, rest1,
-           points[0],
-           points[start],
-           points[start + 1],
-           smoothing
-       );
-
-
-        Bend(
-            bone2, rest2,
-            points[0],
-            points[start],
-            points[start + 1],
-            smoothing
-        );
-
-        Bend(
-            bone3, rest3,
-            points[start],
-            points[start + 1],
-            points[start + 2],
-            smoothing
-        );
-
-        Bend(
-            bone4, rest4,
-            points[start + 1],
-            points[start + 2],
-            points[start + 3],
-            smoothing
-        );
-    }
-
-    private void ApplySpread(
-        IList<Landmark> points,
-        int start,
-        float t)
-    {
-        if (bone1 == null ||
-            spreadAxis.sqrMagnitude < 0.0001f)
-            return;
-
-        Vector3 wrist = ToVector(points[0]);
-        Vector3 indexBase = ToVector(points[5]);
-        Vector3 middleBase = ToVector(points[9]);
-        Vector3 pinkyBase = ToVector(points[17]);
-
-        // Palm coordinate system
-        Vector3 palmForward = middleBase - wrist;
-        Vector3 palmAcross = indexBase - pinkyBase;
-
-        Vector3 palmNormal = Vector3.Cross(
-            palmAcross, palmForward
-        );
-
-        if (palmNormal.sqrMagnitude < 0.000001f)
-            return;
-
-        palmNormal.Normalize();
-
-        // Project finger direction onto palm plane
-        Vector3 fingerDirection =
-            ToVector(points[start + 1]) -
-            ToVector(points[start]);
-
-        Vector3 projectedFinger = Vector3.ProjectOnPlane(
-            fingerDirection, palmNormal
-        );
-
-        if (projectedFinger.sqrMagnitude < 0.000001f)
-            return;
-
-        // Angle relative to the palm, not the camera
-        float spreadAngle = Vector3.SignedAngle(
-            palmForward,
-            projectedFinger,
-            palmNormal
-        );
-
-        // First open-hand pose is neutral
-        if (!spreadCalibrated)
+        for (int i = 0; i < 4; i++)
         {
-            neutralSpread = spreadAngle;
-            spreadCalibrated = true;
+            Transform bone = bones[i];
+
+            // Determine the MediaPipe segment.
+            int from;
+            int to;
+
+            if (bone1IsMetacarpal)
+            {
+                // Four different segments:
+                // wrist -> MCP -> PIP -> DIP -> TIP
+                from = i == 0 ? 0 : start + i - 1;
+                to = start + i;
+            }
+            else
+            {
+                // Bone1 begins at the knuckle.
+                // The final joint uses the distal
+                // segment direction.
+                int segment = Mathf.Min(i, 2);
+                from = start + segment;
+                to = from + 1;
+            }
+
+            // Tracked 3D direction
+            Vector3 trackedDirection =
+                ToUnity(points[to], cameraTransform,
+                    mirrorX, mirrorY)
+                -
+                ToUnity(points[from], cameraTransform,
+                    mirrorX, mirrorY);
+
+            if (trackedDirection.sqrMagnitude < 0.00000001f)
+                continue;
+
+            trackedDirection.Normalize();
+
+            // Current direction of the model's bone
+            Vector3 currentDirection;
+
+            if (i < 3)
+            {
+                currentDirection =
+                    bones[i + 1].position - bone.position;
+            }
+            else if (tipMarker != null)
+            {
+                currentDirection =
+                    tipMarker.position - bone.position;
+            }
+            else
+            {
+                currentDirection =
+                    bone.TransformDirection(lastBoneLocalAxis);
+            }
+
+            if (currentDirection.sqrMagnitude < 0.00000001f)
+                continue;
+
+            currentDirection.Normalize();
+
+            // Rotate the actual model segment toward
+            // its MediaPipe segment.
+            Quaternion correction =
+                Quaternion.FromToRotation(
+                    currentDirection,
+                    trackedDirection
+                );
+
+            Quaternion targetRotation =
+                correction * bone.rotation;
+
+            bone.rotation = Quaternion.Slerp(
+                bone.rotation,
+                targetRotation,
+                Mathf.Clamp01(smoothing)
+            );
         }
-
-        float relativeAngle = Mathf.DeltaAngle(
-            neutralSpread,
-            spreadAngle
-        );
-
-        float spread = Mathf.Clamp(
-            relativeAngle * spreadMultiplier * spreadDirection,
-            -maxSpread,
-            maxSpread
-        );
-
-        Quaternion target = rest1 *
-            Quaternion.AngleAxis(
-                spread,
-                spreadAxis.normalized
-            );
-
-        bone1.localRotation = Quaternion.Slerp(
-            bone1.localRotation,
-            target,
-            t
-        );
     }
 
-    private void Bend(
-        Transform bone,
-        Quaternion rest,
-        Landmark a,
-        Landmark b,
-        Landmark c,
-        float t)
+    private Vector3 ToUnity(
+        Landmark point,
+        Transform cameraTransform,
+        bool mirrorX,
+        bool mirrorY)
     {
-        if (bone == null ||
-            bendAxis.sqrMagnitude < 0.0001f)
-            return;
-
-        Vector3 first = ToVector(a) - ToVector(b);
-        Vector3 second = ToVector(c) - ToVector(b);
-
-        float angle = Vector3.Angle(first, second);
-
-        float bend = Mathf.Clamp(
-            180f - angle,
-            0f,
-            maxBend
+        Vector3 local = new Vector3(
+            mirrorX ? -point.x : point.x,
+            mirrorY ? -point.y : point.y,
+            point.z
         );
 
-        Quaternion target = rest *
-            Quaternion.AngleAxis(
-                bend * bendDirection,
-                bendAxis.normalized
-            );
-
-        bone.localRotation = Quaternion.Slerp(
-            bone.localRotation,
-            target,
-            t
-        );
-    }
-
-    private Vector3 ToVector(Landmark p)
-    {
-        return new Vector3(p.x, p.y, p.z);
+        return cameraTransform.TransformPoint(local);
     }
 }

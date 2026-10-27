@@ -153,11 +153,27 @@ public class MediaPipeVRHand : MonoBehaviour
                     UpdateHandRotation(hand, world);
                 }
 
-                hand.thumb.Apply(world, 1, t);
-                hand.index.Apply(world, 5, t);
-                hand.middle.Apply(world, 9, t);
-                hand.ring.Apply(world, 13, t);
-                hand.pinky.Apply(world, 17, t);
+                hand.thumb.Apply(world, 1, t, sceneCamera.transform, mirrorX, mirrorY);
+
+                hand.index.Apply(
+                    world, 5, t,
+                    sceneCamera.transform, mirrorX, mirrorY
+                );
+
+                hand.middle.Apply(
+                    world, 9, t,
+                    sceneCamera.transform, mirrorX, mirrorY
+                );
+
+                hand.ring.Apply(
+                    world, 13, t,
+                    sceneCamera.transform, mirrorX, mirrorY
+                );
+
+                hand.pinky.Apply(
+                    world, 17, t,
+                    sceneCamera.transform, mirrorX, mirrorY
+                );
 
                 var thumbTip = points[4];
                 var indexTip = points[8];
