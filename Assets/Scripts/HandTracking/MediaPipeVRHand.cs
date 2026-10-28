@@ -24,6 +24,12 @@ public class MediaPipeVRHand : MonoBehaviour
         public bool isPinching;
 
         public Vector3 modelRotationOffset = Vector3.zero;
+
+        [System.NonSerialized] public Vector3 baseScale;
+        [System.NonSerialized] public float basePalmLength;
+        [System.NonSerialized] public bool isVisible = true;
+        [System.NonSerialized] public float lastSeenTime;
+        [System.NonSerialized] public bool isLost = true;
     }
 
     public HandRig leftHand = new HandRig();
@@ -38,7 +44,14 @@ public class MediaPipeVRHand : MonoBehaviour
     public bool enableRotation = true;
     public float rotationSmoothing = 20f;
 
+    [Header("Hand Size")]
+    public bool matchHandSize = true;
+    public float sizeMultiplier = 1f;
+    public float sizeSmoothing = 10f;
 
+    [Header("Visibility")]
+    public bool hideWhenNotTracked = true;
+    public float hideDelay = 0.15f;
 
     [Header("Pinch Detection")]
     public float pinchThreshold = 0.4f;
@@ -73,6 +86,15 @@ public class MediaPipeVRHand : MonoBehaviour
         hand.middle.Initialize();
         hand.ring.Initialize();
         hand.pinky.Initialize();
+
+        hand.baseScale = hand.handRoot.localScale;
+        hand.basePalmLength = hand.middle.bone1 != null
+            ? Vector3.Distance(hand.handRoot.position, hand.middle.bone1.position)
+            : 0f;
+
+        hand.isVisible = true;
+        hand.isLost = true;
+        SetVisible(hand, !hideWhenNotTracked);
     }
 
     public void Apply(HandLandmarkerResult result)
@@ -133,6 +155,11 @@ public class MediaPipeVRHand : MonoBehaviour
                 else
                     rightTracked = true;
 
+                bool snap = hand.isLost;
+                hand.isLost = false;
+                hand.lastSeenTime = Time.time;
+                SetVisible(hand, true);
+
                 var wrist = points[0];
 
                 float x = mirrorX ? 1f - wrist.x : wrist.x;
@@ -145,12 +172,25 @@ public class MediaPipeVRHand : MonoBehaviour
                 hand.handRoot.position = Vector3.Lerp(
                     hand.handRoot.position,
                     target,
-                    t
+                    snap ? 1f : t
                 );
 
                 if (enableRotation)
                 {
-                    UpdateHandRotation(hand, world);
+                    UpdateHandRotation(hand, world, snap);
+                }
+
+                if (matchHandSize)
+                {
+                    var knuckle = points[9];
+                    float aspect = sceneCamera.aspect;
+                    float palmViewport = new Vector3(
+                        (knuckle.x - wrist.x) * aspect,
+                        knuckle.y - wrist.y,
+                        (knuckle.z - wrist.z) * aspect
+                    ).magnitude;
+
+                    UpdateHandScale(hand, palmViewport, snap);
                 }
 
                 hand.thumb.Apply(world, 1, t, sceneCamera.transform, mirrorX, mirrorY);
@@ -208,18 +248,73 @@ public class MediaPipeVRHand : MonoBehaviour
             );
         }
 
-        // Reset 
         if (!leftTracked)
         {
             SetPinching(leftHand, false, "Left");
-
+            UpdateLostHand(leftHand);
         }
 
         if (!rightTracked)
         {
             SetPinching(rightHand, false, "Right");
-
+            UpdateLostHand(rightHand);
         }
+    }
+
+    void UpdateLostHand(HandRig hand)
+    {
+        if (hand.isLost || Time.time - hand.lastSeenTime < hideDelay)
+            return;
+
+        hand.isLost = true;
+        ResetFingers(hand);
+
+        if (hideWhenNotTracked)
+            SetVisible(hand, false);
+    }
+
+    void SetVisible(HandRig hand, bool visible)
+    {
+        if (hand.isVisible == visible)
+            return;
+
+        hand.isVisible = visible;
+        hand.handRoot.localScale = visible ? hand.baseScale : Vector3.zero;
+    }
+
+    void UpdateHandScale(HandRig hand, float palmViewport, bool snap)
+    {
+        if (hand.basePalmLength < 0.00001f || palmViewport < 0.00001f)
+            return;
+
+        float frustumHeight = sceneCamera.orthographic
+            ? 2f * sceneCamera.orthographicSize
+            : 2f * hand.trackingDepth *
+              Mathf.Tan(sceneCamera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+
+        float targetLength = palmViewport * frustumHeight;
+
+        Vector3 targetScale = hand.baseScale *
+            (targetLength / hand.basePalmLength * sizeMultiplier);
+
+        float scaleT = snap ? 1f : 1f - Mathf.Exp(
+            -sizeSmoothing * Time.deltaTime
+        );
+
+        hand.handRoot.localScale = Vector3.Lerp(
+            hand.handRoot.localScale,
+            targetScale,
+            scaleT
+        );
+    }
+
+    void ResetFingers(HandRig hand)
+    {
+        hand.thumb.ResetTracking();
+        hand.index.ResetTracking();
+        hand.middle.ResetTracking();
+        hand.ring.ResetTracking();
+        hand.pinky.ResetTracking();
     }
 
     void SetPinching(HandRig hand, bool pinching, string label)
@@ -238,42 +333,37 @@ public class MediaPipeVRHand : MonoBehaviour
     private void UpdateHandRotation(
     HandRig hand,
     System.Collections.Generic.IList<
-        Mediapipe.Tasks.Components.Containers.Landmark> points)
+        Mediapipe.Tasks.Components.Containers.Landmark> points,
+    bool snap)
     {
-        // Get 3D landmark positions
         Vector3 wrist = ToCameraSpace(points[0]);
         Vector3 index = ToCameraSpace(points[5]);
         Vector3 middle = ToCameraSpace(points[9]);
         Vector3 pinky = ToCameraSpace(points[17]);
 
-        // Direction from wrist toward fingers
         Vector3 up = middle - wrist;
 
-        // Direction across the palm
         Vector3 across = index - pinky;
 
-        // Direction perpendicular to the palm
         Vector3 forward = Vector3.Cross(across, up);
 
         if (up.sqrMagnitude < 0.000001f ||
             forward.sqrMagnitude < 0.000001f)
             return;
 
-        // Actual palm orientation from landmarks
         Quaternion trackedRotation =
             Quaternion.LookRotation(
                 forward.normalized,
                 up.normalized
             );
 
-        // Fixed correction for the imported model's axes
         Quaternion modelOffset =
             Quaternion.Euler(hand.modelRotationOffset);
 
         Quaternion targetRotation =
             trackedRotation * modelOffset;
 
-        float rotationT = 1f - Mathf.Exp(
+        float rotationT = snap ? 1f : 1f - Mathf.Exp(
             -rotationSmoothing * Time.deltaTime
         );
 

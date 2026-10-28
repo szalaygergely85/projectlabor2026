@@ -148,12 +148,18 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
                     (result.handLandmarks?.Count ?? 0)
                 );
               }
-              vrHand.Apply(result);
+              if (vrHand != null)
+              {
+                vrHand.Apply(result);
+              }
             }
             else
             {
               _handLandmarkerResultAnnotationController.DrawNow(default);
-              vrHand?.Apply(default);
+              if (vrHand != null)
+              {
+                vrHand.Apply(default);
+              }
               if (Time.frameCount % 60 == 0)
                 Debug.Log("[RUNNER] Detection failed");
             }
