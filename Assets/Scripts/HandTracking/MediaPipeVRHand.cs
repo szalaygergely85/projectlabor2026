@@ -46,7 +46,7 @@ public class MediaPipeVRHand : MonoBehaviour
 
     [Header("Hand Size")]
     public bool matchHandSize = true;
-    public float sizeMultiplier = 1f;
+    public float sizeMultiplier = 1.5f;
     public float sizeSmoothing = 10f;
 
     [Header("Visibility")]
