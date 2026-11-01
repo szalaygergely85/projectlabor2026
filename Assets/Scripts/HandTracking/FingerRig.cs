@@ -5,22 +5,20 @@ using Mediapipe.Tasks.Components.Containers;
 [System.Serializable]
 public class FingerRig
 {
-    [Header("Finger Bones")]
+    private const float SlowSpeed = 8f;
+    private const float FastSpeed = 45f;
+
     public Transform bone1;
     public Transform bone2;
     public Transform bone3;
     public Transform bone4;
 
-    [Header("Adaptive Smoothing")]
-    [Min(0.1f)] public float slowSpeed = 8f;
-    [Min(0.1f)] public float fastSpeed = 45f;
-
     private Transform[] bones;
     private readonly Vector3[] filteredDirections = new Vector3[3];
     private readonly bool[] directionReady = new bool[3];
+    private readonly Quaternion[] restRotations = new Quaternion[4];
     private bool initialized;
 
-    private Quaternion[] restRotations = new Quaternion[4];
     public void Initialize()
     {
         bones = new[] { bone1, bone2, bone3, bone4 };
@@ -30,15 +28,13 @@ public class FingerRig
         for (int i = 0; i < bones.Length; i++)
         {
             if (bones[i] != null)
+            {
+                restRotations[i] = bones[i].localRotation;
                 continue;
+            }
 
             Debug.LogWarning($"[FingerRig] Bone {i + 1} is not assigned.");
             initialized = false;
-        }
-        for (int i = 0; i < 4; i++)
-        {
-            if (bones[i] != null)
-                restRotations[i] = bones[i].localRotation;
         }
     }
 
@@ -48,13 +44,7 @@ public class FingerRig
             directionReady[i] = false;
     }
 
-    public void Apply(
-        IList<Landmark> points,
-        int start,
-        float smoothing,
-        Transform cameraTransform,
-        bool mirrorX,
-        bool mirrorY)
+    public void Apply(IList<Landmark> points, int start, Transform cameraTransform)
     {
         if (!initialized || points == null || points.Count < 21 ||
             cameraTransform == null || start < 1 || start + 3 >= points.Count)
@@ -67,8 +57,8 @@ public class FingerRig
         {
             Transform bone = bones[i];
 
-            Vector3 trackedDirection = ToWorld(points[start + i + 1], cameraTransform, mirrorX, mirrorY)
-                                     - ToWorld(points[start + i], cameraTransform, mirrorX, mirrorY);
+            Vector3 trackedDirection = ToWorld(points[start + i + 1], cameraTransform)
+                                     - ToWorld(points[start + i], cameraTransform);
 
             if (trackedDirection.sqrMagnitude < 1e-10f)
                 continue;
@@ -84,7 +74,7 @@ public class FingerRig
             {
                 float angle = Vector3.Angle(filteredDirections[i], trackedDirection);
                 float amount = Mathf.InverseLerp(2f, 15f, angle);
-                float response = Mathf.Lerp(slowSpeed, fastSpeed, amount);
+                float response = Mathf.Lerp(SlowSpeed, FastSpeed, amount);
                 float alpha = 1f - Mathf.Exp(-response * Time.deltaTime);
 
                 filteredDirections[i] = Vector3.Slerp(
@@ -103,37 +93,12 @@ public class FingerRig
 
             bone.rotation = correction * bone.rotation;
         }
-
     }
 
-
-    private static Vector3 ToWorld(
-        Landmark point,
-        Transform cameraTransform,
-        bool mirrorX,
-        bool mirrorY)
+    private static Vector3 ToWorld(Landmark point, Transform cameraTransform)
     {
-        Vector3 cameraSpace = new Vector3(
-            mirrorX ? -point.x : point.x,
-            mirrorY ? -point.y : point.y,
-            point.z
+        return cameraTransform.TransformPoint(
+            new Vector3(point.x, -point.y, -point.z)
         );
-
-        return cameraTransform.TransformPoint(cameraSpace);
     }
-
-    public void ResetPose()
-    {
-        if (!initialized)
-            return;
-
-        for (int i = 0; i < 4; i++)
-        {
-            if (bones[i] != null)
-                bones[i].localRotation = restRotations[i];
-        }
-
-        ResetTracking();
-    }
-
 }

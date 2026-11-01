@@ -1,11 +1,10 @@
+using System.Collections.Generic;
 using UnityEngine;
+using Mediapipe.Tasks.Components.Containers;
 using Mediapipe.Tasks.Vision.HandLandmarker;
 
 public class MediaPipeVRHand : MonoBehaviour
 {
-    [Header("References")]
-    public Camera sceneCamera;
-
     [System.Serializable]
     public class HandRig
     {
@@ -17,44 +16,26 @@ public class MediaPipeVRHand : MonoBehaviour
         public FingerRig ring = new FingerRig();
         public FingerRig pinky = new FingerRig();
 
-        [System.NonSerialized]
-        public float trackingDepth;
-
-        [System.NonSerialized]
-        public bool isPinching;
-
-        public Vector3 modelRotationOffset = Vector3.zero;
-
+        [System.NonSerialized] public float trackingDepth;
+        [System.NonSerialized] public bool isPinching;
         [System.NonSerialized] public Vector3 baseScale;
         [System.NonSerialized] public float basePalmLength;
         [System.NonSerialized] public bool isVisible = true;
         [System.NonSerialized] public float lastSeenTime;
         [System.NonSerialized] public bool isLost = true;
+        [System.NonSerialized] public Quaternion alignOffset = Quaternion.identity;
     }
 
+    private const float Smoothing = 30f;
+    private const float RotationSmoothing = 20f;
+    private const float SizeMultiplier = 1f;
+    private const float SizeSmoothing = 10f;
+    private const float HideDelay = 0.15f;
+    private const float PinchThreshold = 0.4f;
+
+    public Camera sceneCamera;
     public HandRig leftHand = new HandRig();
     public HandRig rightHand = new HandRig();
-
-    [Header("Movement")]
-    public float smoothing = 30f;
-    public bool mirrorX = false;
-    public bool mirrorY = true;
-
-    [Header("Rotation")]
-    public bool enableRotation = true;
-    public float rotationSmoothing = 20f;
-
-    [Header("Hand Size")]
-    public bool matchHandSize = true;
-    public float sizeMultiplier = 1.5f;
-    public float sizeSmoothing = 10f;
-
-    [Header("Visibility")]
-    public bool hideWhenNotTracked = true;
-    public float hideDelay = 0.15f;
-
-    [Header("Pinch Detection")]
-    public float pinchThreshold = 0.4f;
 
     public bool IsPinching =>
         leftHand.isPinching || rightHand.isPinching;
@@ -92,9 +73,24 @@ public class MediaPipeVRHand : MonoBehaviour
             ? Vector3.Distance(hand.handRoot.position, hand.middle.bone1.position)
             : 0f;
 
+        hand.alignOffset = Quaternion.identity;
+
+        if (hand.index.bone1 != null && hand.middle.bone1 != null && hand.pinky.bone1 != null)
+        {
+            Vector3 up = hand.middle.bone1.position - hand.handRoot.position;
+            Vector3 across = hand.index.bone1.position - hand.pinky.bone1.position;
+            Vector3 forward = Vector3.Cross(across, up);
+
+            if (up.sqrMagnitude > 0.000001f && forward.sqrMagnitude > 0.000001f)
+            {
+                Quaternion modelFrame = Quaternion.LookRotation(forward.normalized, up.normalized);
+                hand.alignOffset = Quaternion.Inverse(modelFrame) * hand.handRoot.rotation;
+            }
+        }
+
         hand.isVisible = true;
         hand.isLost = true;
-        SetVisible(hand, !hideWhenNotTracked);
+        SetVisible(hand, false);
     }
 
     public void Apply(HandLandmarkerResult result)
@@ -105,7 +101,7 @@ public class MediaPipeVRHand : MonoBehaviour
         bool leftTracked = false;
         bool rightTracked = false;
 
-        float t = 1f - Mathf.Exp(-smoothing * Time.deltaTime);
+        float t = 1f - Mathf.Exp(-Smoothing * Time.deltaTime);
 
         if (result.handLandmarks != null &&
             result.handWorldLandmarks != null &&
@@ -127,16 +123,14 @@ public class MediaPipeVRHand : MonoBehaviour
                 if (categories == null || categories.Count == 0)
                     continue;
 
-                string label = categories[0].categoryName;
+                string category = categories[0].categoryName;
 
-                HandRig hand;
-
-                if (label == "Left")
-                    hand = leftHand;
-                else if (label == "Right")
-                    hand = rightHand;
-                else
+                if (category != "Left" && category != "Right")
                     continue;
+
+                bool isLeft = category == "Right";
+                HandRig hand = isLeft ? leftHand : rightHand;
+                string label = isLeft ? "Left" : "Right";
 
                 var points =
                     result.handLandmarks[handIndex].landmarks;
@@ -150,7 +144,7 @@ public class MediaPipeVRHand : MonoBehaviour
                     continue;
                 }
 
-                if (label == "Left")
+                if (isLeft)
                     leftTracked = true;
                 else
                     rightTracked = true;
@@ -162,11 +156,8 @@ public class MediaPipeVRHand : MonoBehaviour
 
                 var wrist = points[0];
 
-                float x = mirrorX ? 1f - wrist.x : wrist.x;
-                float y = mirrorY ? 1f - wrist.y : wrist.y;
-
                 Vector3 target = sceneCamera.ViewportToWorldPoint(
-                    new Vector3(x, y, hand.trackingDepth)
+                    new Vector3(wrist.x, 1f - wrist.y, hand.trackingDepth)
                 );
 
                 hand.handRoot.position = Vector3.Lerp(
@@ -175,45 +166,23 @@ public class MediaPipeVRHand : MonoBehaviour
                     snap ? 1f : t
                 );
 
-                if (enableRotation)
-                {
-                    UpdateHandRotation(hand, world, snap);
-                }
+                UpdateHandRotation(hand, world, snap);
 
-                if (matchHandSize)
-                {
-                    var knuckle = points[9];
-                    float aspect = sceneCamera.aspect;
-                    float palmViewport = new Vector3(
-                        (knuckle.x - wrist.x) * aspect,
-                        knuckle.y - wrist.y,
-                        (knuckle.z - wrist.z) * aspect
-                    ).magnitude;
+                var knuckle = points[9];
+                float aspect = sceneCamera.aspect;
+                float palmViewport = new Vector3(
+                    (knuckle.x - wrist.x) * aspect,
+                    knuckle.y - wrist.y,
+                    (knuckle.z - wrist.z) * aspect
+                ).magnitude;
 
-                    UpdateHandScale(hand, palmViewport, snap);
-                }
+                UpdateHandScale(hand, palmViewport, snap);
 
-                hand.thumb.Apply(world, 1, t, sceneCamera.transform, mirrorX, mirrorY);
-
-                hand.index.Apply(
-                    world, 5, t,
-                    sceneCamera.transform, mirrorX, mirrorY
-                );
-
-                hand.middle.Apply(
-                    world, 9, t,
-                    sceneCamera.transform, mirrorX, mirrorY
-                );
-
-                hand.ring.Apply(
-                    world, 13, t,
-                    sceneCamera.transform, mirrorX, mirrorY
-                );
-
-                hand.pinky.Apply(
-                    world, 17, t,
-                    sceneCamera.transform, mirrorX, mirrorY
-                );
+                hand.thumb.Apply(world, 1, sceneCamera.transform);
+                hand.index.Apply(world, 5, sceneCamera.transform);
+                hand.middle.Apply(world, 9, sceneCamera.transform);
+                hand.ring.Apply(world, 13, sceneCamera.transform);
+                hand.pinky.Apply(world, 17, sceneCamera.transform);
 
                 var thumbTip = points[4];
                 var indexTip = points[8];
@@ -231,8 +200,8 @@ public class MediaPipeVRHand : MonoBehaviour
                 );
 
                 float threshold = hand.isPinching
-                    ? pinchThreshold * 1.35f
-                    : pinchThreshold;
+                    ? PinchThreshold * 1.35f
+                    : PinchThreshold;
 
                 bool pinching = palmWidth > 0.001f &&
                     distance / palmWidth < threshold;
@@ -263,14 +232,12 @@ public class MediaPipeVRHand : MonoBehaviour
 
     void UpdateLostHand(HandRig hand)
     {
-        if (hand.isLost || Time.time - hand.lastSeenTime < hideDelay)
+        if (hand.isLost || Time.time - hand.lastSeenTime < HideDelay)
             return;
 
         hand.isLost = true;
         ResetFingers(hand);
-
-        if (hideWhenNotTracked)
-            SetVisible(hand, false);
+        SetVisible(hand, false);
     }
 
     void SetVisible(HandRig hand, bool visible)
@@ -295,10 +262,10 @@ public class MediaPipeVRHand : MonoBehaviour
         float targetLength = palmViewport * frustumHeight;
 
         Vector3 targetScale = hand.baseScale *
-            (targetLength / hand.basePalmLength * sizeMultiplier);
+            (targetLength / hand.basePalmLength * SizeMultiplier);
 
         float scaleT = snap ? 1f : 1f - Mathf.Exp(
-            -sizeSmoothing * Time.deltaTime
+            -SizeSmoothing * Time.deltaTime
         );
 
         hand.handRoot.localScale = Vector3.Lerp(
@@ -330,11 +297,7 @@ public class MediaPipeVRHand : MonoBehaviour
         );
     }
 
-    private void UpdateHandRotation(
-    HandRig hand,
-    System.Collections.Generic.IList<
-        Mediapipe.Tasks.Components.Containers.Landmark> points,
-    bool snap)
+    private void UpdateHandRotation(HandRig hand, IList<Landmark> points, bool snap)
     {
         Vector3 wrist = ToCameraSpace(points[0]);
         Vector3 index = ToCameraSpace(points[5]);
@@ -342,9 +305,7 @@ public class MediaPipeVRHand : MonoBehaviour
         Vector3 pinky = ToCameraSpace(points[17]);
 
         Vector3 up = middle - wrist;
-
         Vector3 across = index - pinky;
-
         Vector3 forward = Vector3.Cross(across, up);
 
         if (up.sqrMagnitude < 0.000001f ||
@@ -357,14 +318,11 @@ public class MediaPipeVRHand : MonoBehaviour
                 up.normalized
             );
 
-        Quaternion modelOffset =
-            Quaternion.Euler(hand.modelRotationOffset);
-
         Quaternion targetRotation =
-            trackedRotation * modelOffset;
+            trackedRotation * hand.alignOffset;
 
         float rotationT = snap ? 1f : 1f - Mathf.Exp(
-            -rotationSmoothing * Time.deltaTime
+            -RotationSmoothing * Time.deltaTime
         );
 
         hand.handRoot.rotation = Quaternion.Slerp(
@@ -374,15 +332,10 @@ public class MediaPipeVRHand : MonoBehaviour
         );
     }
 
-    private Vector3 ToCameraSpace(
-        Mediapipe.Tasks.Components.Containers.Landmark p)
+    private Vector3 ToCameraSpace(Landmark p)
     {
-        Vector3 local = new Vector3(
-            mirrorX ? -p.x : p.x,
-            mirrorY ? -p.y : p.y,
-            p.z
+        return sceneCamera.transform.TransformDirection(
+            new Vector3(p.x, -p.y, -p.z)
         );
-
-        return sceneCamera.transform.TransformDirection(local);
     }
 }
