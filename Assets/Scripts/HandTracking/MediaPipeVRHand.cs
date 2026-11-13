@@ -26,16 +26,30 @@ public class MediaPipeVRHand : MonoBehaviour
         [System.NonSerialized] public Quaternion alignOffset = Quaternion.identity;
     }
 
-    private const float Smoothing = 30f;
-    private const float RotationSmoothing = 20f;
-    private const float SizeMultiplier = 1f;
-    private const float SizeSmoothing = 10f;
-    private const float HideDelay = 0.15f;
+    private const float Smoothing = 42f;
+    private const float RotationSmoothing = 28f;
+    // The hands are drawn noticeably smaller than their camera-image size.
+    // A hand held close to the webcam covers a third of the image, and at
+    // full size it hid the bowl and the ingredients the player was trying to
+    // reach; at 0.7 the fingers still line up with the real hand, but the
+    // board stays visible underneath.
+    private const float SizeMultiplier = 0.7f;
+    private const float SizeSmoothing = 14f;
+    private const float HideDelay = 0.25f;
     private const float PinchThreshold = 0.4f;
+
+    // The hand is rendered this far in front of the prep-board plane, so the
+    // board can never occlude the palm, whatever height the player holds at.
+    private const float HandForwardOffset = 0.4f;
+    private const float BoardFrontMargin = 0.32f;
+    private const float MinRenderDepth = 0.4f;
 
     public Camera sceneCamera;
     public HandRig leftHand = new HandRig();
     public HandRig rightHand = new HandRig();
+
+    [System.NonSerialized] public CookingRehab.HandGestureRecognizer gestureRecognizer;
+    [System.NonSerialized] public float boardDepth;
 
     public bool IsPinching =>
         leftHand.isPinching || rightHand.isPinching;
@@ -55,12 +69,42 @@ public class MediaPipeVRHand : MonoBehaviour
 
         InitializeHand(leftHand);
         InitializeHand(rightHand);
+
+        gestureRecognizer = GetComponent<CookingRehab.HandGestureRecognizer>();
+        if (gestureRecognizer == null)
+            gestureRecognizer = gameObject.AddComponent<CookingRehab.HandGestureRecognizer>();
+        gestureRecognizer.Initialize(sceneCamera, this);
+    }
+
+    /// <summary>
+    /// Tells the rig which depth plane the cooking board occupies. Hands are
+    /// rendered in front of it, so the board never hides them, while the board
+    /// itself can stay exactly where the scene expects it.
+    /// </summary>
+    public void SetBoardDepth(float depth)
+    {
+        if (depth <= 0.01f)
+            return;
+
+        boardDepth = depth;
+        if (leftHand.handRoot != null)
+            leftHand.trackingDepth = RenderDepth();
+        if (rightHand.handRoot != null)
+            rightHand.trackingDepth = RenderDepth();
+    }
+
+    private float RenderDepth()
+    {
+        return Mathf.Clamp(boardDepth - HandForwardOffset, MinRenderDepth,
+            Mathf.Max(MinRenderDepth, boardDepth - BoardFrontMargin));
     }
 
     void InitializeHand(HandRig hand)
     {
         hand.trackingDepth =
             sceneCamera.WorldToViewportPoint(hand.handRoot.position).z;
+        if (boardDepth > 0.01f)
+            hand.trackingDepth = RenderDepth();
 
         hand.thumb.Initialize();
         hand.index.Initialize();
@@ -227,6 +271,11 @@ public class MediaPipeVRHand : MonoBehaviour
         {
             SetPinching(rightHand, false, "Right");
             UpdateLostHand(rightHand);
+        }
+
+        if (gestureRecognizer != null)
+        {
+            gestureRecognizer.Process(result);
         }
     }
 
